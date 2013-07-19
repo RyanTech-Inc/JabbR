@@ -63,10 +63,11 @@
     </Reference>
     <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\EntityFramework.6.0.0-beta1-20706\lib\net45\EntityFramework.dll</HintPath>
+      <HintPath>..\packages\EntityFramework.6.0.0-rc1-20717\lib\net45\EntityFramework.dll</HintPath>
     </Reference>
-    <Reference Include="EntityFramework.SqlServer">
-      <HintPath>..\packages\EntityFramework.6.0.0-beta1-20706\lib\net45\EntityFramework.SqlServer.dll</HintPath>
+    <Reference Include="EntityFramework.SqlServer, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>..\packages\EntityFramework.6.0.0-rc1-20717\lib\net45\EntityFramework.SqlServer.dll</HintPath>
     </Reference>
     <Reference Include="HtmlAgilityPack, Version=1.4.6.0, Culture=neutral, PublicKeyToken=bd319b19eaf3b43a, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -236,7 +237,7 @@
     <Content Include="Chat.js" />
     <Content Include="Chat.toast.js" />
     <Content Include="Chat.twitter.js" />
-    <Content Include="Chat.ui.filePaste.js" />
+    <Content Include="Chat.ui.fileUpload.js" />
     <Content Include="Chat.ui.js" />
     <Content Include="Chat.ui.room.js" />
     <Content Include="Chat.utility.js" />
@@ -812,6 +813,10 @@
     <Content Include="notifications.js" />
     <Content Include="notifications.unreadcounter.js" />
     <Content Include="robots.txt" />
+    <EmbeddedResource Include="LanguageResources.resx">
+      <Generator>PublicResXFileCodeGenerator</Generator>
+      <LastGenOutput>LanguageResources.Designer.cs</LastGenOutput>
+    </EmbeddedResource>
     <EmbeddedResource Include="Migrations\201208211555032_BanUser.resx">
       <DependentUpon>201208211555032_BanUser.cs</DependentUpon>
     </EmbeddedResource>
@@ -864,6 +869,9 @@
     <EmbeddedResource Include="Migrations\201307020008436_AllowUserResetPassword.resx">
       <DependentUpon>201307020008436_AllowUserResetPassword.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="Migrations\201307181924477_AddUserPreferences.resx">
+      <DependentUpon>201307181924477_AddUserPreferences.cs</DependentUpon>
+    </EmbeddedResource>
     <None Include="Scripts\jquery-1.9.0.intellisense.js" />
     <Content Include="Scripts\ba-linkify.min.js" />
     <Content Include="Scripts\bootstrap.js" />
@@ -873,6 +881,8 @@
     <Content Include="Scripts\jquery-migrate-1.0.0.min.js" />
     <Content Include="Scripts\jquery.color-2.1.2.js" />
     <Content Include="Scripts\jquery.color-2.1.2.min.js" />
+    <Content Include="Scripts\jquery.dragsort-0.5.1.js" />
+    <Content Include="Scripts\jquery.dragsort-0.5.1.min.js" />
     <Content Include="Scripts\jquery.history.js" />
     <Content Include="Scripts\jquery.autotabcomplete.js" />
     <Content Include="Scripts\jquery.captureDocumentWrite.js" />
@@ -940,6 +950,11 @@
     <Compile Include="Infrastructure\AuthenticationManagerExtensions.cs" />
     <Compile Include="Infrastructure\EnumerableExtensions.cs" />
     <Compile Include="Infrastructure\HttpServerUtility.cs" />
+    <Compile Include="LanguageResources.Designer.cs">
+      <AutoGen>True</AutoGen>
+      <DesignTime>True</DesignTime>
+      <DependentUpon>LanguageResources.resx</DependentUpon>
+    </Compile>
     <Compile Include="Middleware\FixCookieHandler.cs" />
     <Compile Include="App_Start\Startup.DependencyInjection.cs" />
     <Compile Include="Commands\AllowedCommand.cs" />
@@ -1006,8 +1021,13 @@
     <Compile Include="Migrations\201307020008436_AllowUserResetPassword.Designer.cs">
       <DependentUpon>201307020008436_AllowUserResetPassword.cs</DependentUpon>
     </Compile>
+    <Compile Include="Migrations\201307181924477_AddUserPreferences.cs" />
+    <Compile Include="Migrations\201307181924477_AddUserPreferences.Designer.cs">
+      <DependentUpon>201307181924477_AddUserPreferences.cs</DependentUpon>
+    </Compile>
     <Compile Include="Models\Attachment.cs" />
     <Compile Include="Models\ClientNotification.cs" />
+    <Compile Include="Models\ChatUserPreferences.cs" />
     <Compile Include="Models\Mapping\AttachmentMap.cs" />
     <Compile Include="Models\Mapping\NotificationMap.cs" />
     <Compile Include="Models\MessageType.cs" />
