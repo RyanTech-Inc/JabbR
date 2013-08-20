@@ -1,4 +1,4 @@
-﻿/// <reference path="Scripts/jquery-1.7.js" />
+﻿/// <reference path="Scripts/jquery-2.0.3.js" />
 /// <reference path="Scripts/jQuery.tmpl.js" />
 /// <reference path="Scripts/jquery.cookie.js" />
 /// <reference path="Scripts/moment.min.js" />
@@ -126,7 +126,7 @@
         return new Date(this.getTime() + 1000 * 3600 * 24 * days);
     };
 
-    function processContent(content, templates, roomCache) {
+    function processContent(content, templates, roomCache, htmlEncoded) {
         content = content || '';
 
         var hasNewline = content.indexOf('\n') !== -1;
@@ -139,7 +139,9 @@
             content = utility.parseEmojis(content);
 
             // Html encode
-            content = utility.encodeHtml(content);
+            if (!htmlEncoded) {
+                content = utility.encodeHtml(content);
+            }
 
             // Transform emoji to html
             content = utility.transformEmojis(content);
@@ -176,8 +178,9 @@
         },
         randomUniqueId: function (prefix) {
             var n = Math.floor(Math.random() * 100);
-            while ($("#" + prefix + n.toString()).length > 0)
+            while ($("#" + prefix + n.toString()).length > 0) {
                 n = Math.Floor(Math.random() * 100);
+            }
             return prefix + n;
         },
         markdownToHtml: function (content) {
@@ -207,4 +210,4 @@
 
     window.chat.utility = utility;
 
-})(jQuery, window, window.Emoji, window.Markdown, window.linkify, window.moment, window.languageResources);
+})(window.jQuery, window, window.Emoji, window.Markdown, window.linkify, window.moment, window.languageResources);

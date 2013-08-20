@@ -71,7 +71,7 @@
                                         <p class="@(notification.HtmlEncoded ? "" : "linkify")">@notification.Message</p>
                                         <small>
                                             <img class="gravatar" src="https://secure.gravatar.com/avatar/@notification.FromUserImage?s=16&amp;d=mm" />
-                                                @Html.Raw(String.Format(Encoder.HtmlEncode(LanguageResources.Notifications_MetadataInfo), 
+                                                @Html.Raw(String.Format(LanguageResources.Notifications_MetadataInfo, 
                                                                         Encoder.HtmlEncode(notification.FromUserName), 
                                                                         Encoder.HtmlEncode(notification.RoomName), 
                                                                         Encoder.HtmlEncode(notification.WhenString)))
@@ -94,7 +94,7 @@
     </script>
     @{
         WriteLiteral(Bundle.JavaScript()
-            .Add("~/Scripts/jquery-1.9.0.min.js")
+            .Add("~/Scripts/jquery-2.0.3.min.js")
             .Add("~/Scripts/json2.min.js")
             .Add("~/Scripts/bootstrap.js")
             .Add("~/Scripts/jQuery.tmpl.min.js")
