@@ -19,7 +19,9 @@
         $ui = $(ui),
         messageSendingDelay = 1500,
         pendingMessages = {},
-        privateRooms = null;
+        privateRooms = null,
+        roomsToLoad = 0,
+        commandNameLookup = {};
 
     function failPendingMessages() {
         for (var id in pendingMessages) {
@@ -56,6 +58,15 @@
         return user.Note;
     }
 
+    function isCommand(msg) {
+        var parts = msg.substr(1).split(' ');
+        if (msg[0] === '/' && parts.length > 0) {
+            return commandNameLookup[parts[0]];
+        }
+
+        return false;
+    }
+
     function getFlagCssClass(user) {
         return (user.Flag) ? 'flag flag-' + user.Flag : '';
     }
@@ -81,8 +92,21 @@
         });
     }
 
-    function populateRoom(room) {
-        var d = $.Deferred();
+    function populateRooms(rooms) {
+        connection.hub.log('loadRooms(' + rooms.join(', ') + ')');
+
+        // Populate the list of users rooms and messages 
+        chat.server.loadRooms(rooms)
+            .done(function () {
+                connection.hub.log('loadRooms.done(' + rooms.join(', ') + ')');
+            })
+            .fail(function (e) {
+                connection.hub.log('loadRooms.failed(' + rooms.join(', ') + ', ' + e + ')');
+            });
+    }
+
+    function populateRoom(room, d) {
+        var deferred = d || $.Deferred();
 
         connection.hub.log('getRoomInfo(' + room + ')');
 
@@ -91,58 +115,74 @@
                 .done(function (roomInfo) {
                     connection.hub.log('getRoomInfo.done(' + room + ')');
 
-                    $.each(roomInfo.Users, function () {
-                        var userViewModel = getUserViewModel(this);
-                        ui.addUser(userViewModel, room);
-                        ui.setUserActivity(userViewModel);
-                    });
+                    populateRoomFromInfo(roomInfo);
 
-                    $.each(roomInfo.Owners, function () {
-                        ui.setRoomOwner(this, room);
-                    });
-
-                    var messageIds = [];
-                    $.each(roomInfo.RecentMessages, function () {
-                        var viewModel = getMessageViewModel(this);
-
-                        messageIds.push(viewModel.id);
-                        ui.addChatMessage(viewModel, room);
-                    });
-
-                    ui.changeRoomTopic(roomInfo.Name, roomInfo.Topic);
-
-                    // mark room as initialized to differentiate messages
-                    // that are added after initial population
-                    ui.setInitialized(room);
-                    ui.scrollToBottom(room);
-                    ui.setRoomListStatuses(room);
-
-                    d.resolveWith(chat);
-
-                    // Watch the messages after the defer, since room messages
-                    // may be appended if we are just joining the room
-                    ui.watchMessageScroll(messageIds, room);
+                    deferred.resolveWith(chat);
                 })
                 .fail(function (e) {
                     connection.hub.log('getRoomInfo.failed(' + room + ', ' + e + ')');
-                    d.rejectWith(chat);
+
+                    setTimeout(function () {
+                        populateRoom(room, deferred);
+                    },
+                    1000);
                 });
 
-        return d.promise();
+        return deferred.promise();
+    }
+
+    function populateRoomFromInfo(roomInfo) {
+        var room = roomInfo.Name;
+
+        $.each(roomInfo.Users, function () {
+            var userViewModel = getUserViewModel(this);
+            ui.addUser(userViewModel, room);
+            ui.setUserActivity(userViewModel);
+        });
+
+        $.each(roomInfo.Owners, function () {
+            ui.setRoomOwner(this, room);
+        });
+
+        var messageIds = [];
+        $.each(roomInfo.RecentMessages, function () {
+            var viewModel = getMessageViewModel(this);
+
+            messageIds.push(viewModel.id);
+            ui.addChatMessage(viewModel, room);
+        });
+
+        ui.changeRoomTopic(roomInfo.Name, roomInfo.Topic);
+
+        // mark room as initialized to differentiate messages
+        // that are added after initial population
+        ui.setInitialized(room);
+        ui.scrollToBottom(room);
+        ui.setRoomListStatuses(room);
+
+        // Watch the messages after the defer, since room messages
+        // may be appended if we are just joining the room
+        ui.watchMessageScroll(messageIds, room);
     }
 
     function populateLobbyRooms() {
+        var d = $.Deferred();
+
         try {
             // Populate the user list with room names
             chat.server.getRooms()
                 .done(function (rooms) {
                     ui.populateLobbyRooms(rooms, privateRooms);
                     ui.setInitialized('Lobby');
+                    d.resolveWith(chat);
                 });
         }
         catch (e) {
             connection.hub.log('getRooms failed');
+            d.rejectWith(chat);
         }
+
+        return d.promise();
     }
 
     function scrollIfNecessary(callback, room) {
@@ -193,10 +233,10 @@
             status: getMessageUserStatus(message.User).toLowerCase()
         };
     }
-    
+
     function getMessageUserStatus(user) {
         if (user.Status === 'Active' && user.IsAfk === true) {
-            return 'Inactive';           
+            return 'Inactive';
         }
 
         return (user.Status || 'Offline');
@@ -277,11 +317,35 @@
         privateRooms = myRooms;
 
         var loadRooms = function () {
+            var filteredRooms = [];
             $.each(rooms, function (index, room) {
                 if (chat.state.activeRoom !== room.Name) {
-                    populateRoom(room.Name);
+                    filteredRooms.push(room.Name);
                 }
             });
+
+            // Set the amount of rooms to load
+            roomsToLoad = filteredRooms.length;
+
+            populateRooms(filteredRooms);
+        };
+
+        var loadCommands = function () {
+            // get list of available commands
+            chat.server.getCommands()
+                .done(function (commands) {
+                    ui.setCommands(commands);
+
+                    for (var i = 0; i < commands.length; ++i) {
+                        commandNameLookup[commands[i].Name] = true;
+                    }
+                });
+
+            // get list of available shortcuts
+            chat.server.getShortcuts()
+                .done(function (shortcuts) {
+                    ui.setShortcuts(shortcuts);
+                });
         };
 
         $.each(rooms, function (index, room) {
@@ -296,7 +360,7 @@
 
         chat.state.tabOrder = userPreferences.TabOrder;
         ui.updateTabOrder(chat.state.tabOrder);
-        
+
         ui.setUserName(chat.state.name);
         ui.setUnreadNotifications(chat.state.unreadNotifications);
 
@@ -307,15 +371,41 @@
         ui.setActiveRoom(this.state.activeRoom || 'Lobby');
 
         if (this.state.activeRoom) {
-            // Populate lobby rooms for intellisense
-            populateLobbyRooms();
-
             // Always populate the active room first then load the other rooms so it looks fast :)
-            populateRoom(this.state.activeRoom).done(loadRooms);
+            populateRoom(this.state.activeRoom).done(function () {
+                loadCommands();
+                populateLobbyRooms();
+
+                loadRooms();
+
+                // No rooms to load just hide the splash screen
+                if (roomsToLoad === 0) {
+                    ui.hideSplashScreen();
+                }
+            });
         }
         else {
-            // There's no active room so we don't care
-            loadRooms();
+            // Populate the lobby first then everything else
+            populateLobbyRooms().done(function () {
+                loadCommands();
+                loadRooms();
+
+                // No rooms to load just hide the splash screen
+                if (roomsToLoad === 0) {
+                    ui.hideSplashScreen();
+                }
+            });
+        }
+    };
+
+    chat.client.roomLoaded = function (roomInfo) {
+        populateRoomFromInfo(roomInfo);
+
+        if (roomsToLoad === 1) {
+            ui.hideSplashScreen();
+        }
+        else {
+            roomsToLoad = roomsToLoad - 1;
         }
     };
 
@@ -323,13 +413,17 @@
         performLogout();
     };
 
-    chat.client.lockRoom = function (user, room) {
+    chat.client.lockRoom = function (user, room, userHasAccess) {
         if (!isSelf(user) && this.state.activeRoom === room) {
             ui.addMessage(utility.getLanguageResource('Chat_UserLockedRoom', user.Name, room), 'notification', this.state.activeRoom);
         }
 
-        ui.setRoomLocked(room);
-        ui.updatePrivateLobbyRooms(room);
+        if (userHasAccess) {
+            ui.setRoomLocked(room);
+            ui.updatePrivateLobbyRooms(room);
+        } else {
+            ui.removeLobbyRoom(room);
+        }
     };
 
     // Called when this user locked a room
@@ -454,16 +548,20 @@
 
     // User single client commands
 
-    chat.client.allowUser = function (room) {
+    chat.client.allowUser = function (room, roomInfo) {
         ui.addMessage(utility.getLanguageResource('Chat_YouGrantedRoomAccess', room), 'notification', this.state.activeRoom);
+
+        ui.updateLobbyRoom(roomInfo);
     };
 
     chat.client.userAllowed = function (user, room) {
         ui.addMessage(utility.getLanguageResource('Chat_UserGrantedRoomAccess', user, room), 'notification', this.state.activeRoom);
     };
 
-    chat.client.unallowUser = function (user, room) {
+    chat.client.unallowUser = function (room) {
         ui.addMessage(utility.getLanguageResource('Chat_YourRoomAccessRevoked', room), 'notification', this.state.activeRoom);
+
+        ui.removeLobbyRoom(room);
     };
 
     chat.client.userUnallowed = function (user, room) {
@@ -543,18 +641,28 @@
         ui.addMessage(utility.getLanguageResource('Chat_YourPasswordSet'), 'notification', this.state.activeRoom);
     };
 
-    // Called when you have added or cleared a note
-    chat.client.noteChanged = function (isAfk, isCleared) {
+    chat.client.changeAfk = function (user, room) {
+        var viewModel = getUserViewModel(user);
+
+        ui.changeNote(viewModel, room);
+
         var message;
-        if (isAfk) {
-            message = utility.getLanguageResource('Chat_YouAreAFK');
-        } else if (!isCleared) {
-            message = utility.getLanguageResource('Chat_YourNoteSet');
+
+        if (!isSelf(user)) {
+            if (user.AfkNote) {
+                message = utility.getLanguageResource('Chat_UserIsAfkNote', user.Name, user.AfkNote);
+            } else {
+                message = utility.getLanguageResource('Chat_UserIsAfk', user.Name);
+            }
         } else {
-            message = utility.getLanguageResource('Chat_YourNoteCleared');
+            if (user.AfkNote) {
+                message = utility.getLanguageResource('Chat_YouAreAfkNote', user.AfkNote);
+            } else {
+                message = utility.getLanguageResource('Chat_YouAreAfk');
+            }
         }
-        
-        ui.addMessage(message, 'notification', this.state.activeRoom);
+
+        ui.addMessage(message, 'notification', room);
     };
 
     // Make sure all the people in all the rooms know that a user has changed their note.
@@ -563,18 +671,23 @@
 
         ui.changeNote(viewModel, room);
 
+        var message;
+
         if (!isSelf(user)) {
-            var message;
-            if (user.IsAfk === true) {
-                message = utility.getLanguageResource('Chat_UserIsAFK', user.Name);
-            } else if (user.Note) {
-                message = utility.getLanguageResource('Chat_UserNoteSet', user.Name);
+            if (user.Note) {
+                message = utility.getLanguageResource('Chat_UserNoteSet', user.Name, user.Note);
             } else {
                 message = utility.getLanguageResource('Chat_UserNoteCleared', user.Name);
             }
-
-            ui.addMessage(message, 'notification', room);
+        } else {
+            if (user.Note) {
+                message = utility.getLanguageResource('Chat_YourNoteSet', user.Note);
+            } else {
+                message = utility.getLanguageResource('Chat_YourNoteCleared');
+            }
         }
+
+        ui.addMessage(message, 'notification', room);
     };
 
     chat.client.topicChanged = function (roomName, topic, who) {
@@ -596,7 +709,7 @@
         }
 
         ui.addMessage(message, 'notification', roomName);
-        
+
         ui.changeRoomTopic(roomName, topic);
     };
 
@@ -608,7 +721,7 @@
         } else {
             message = utility.getLanguageResource('Chat_YouClearedRoomWelcome');
         }
-        
+
         ui.addMessage(message, 'notification', this.state.activeRoom);
         if (welcome) {
             ui.addMessage(welcome, 'welcome', this.state.activeRoom);
@@ -641,7 +754,7 @@
             } else {
                 message = utility.getLanguageResource('Chat_UserClearedFlag', user.Name);
             }
-            
+
             ui.addMessage(message, 'notification', room);
         }
     };
@@ -684,7 +797,7 @@
 
     chat.client.nudge = function (from, to) {
         var message;
-        
+
         function shake(n) {
             var move = function (x, y) {
                 parent.moveBy(x, y);
@@ -709,19 +822,18 @@
         // the method is called if we're the sender, or recipient of a nudge.
         if (!isSelf({ Name: from })) {
             $("#chat-area").pulse({ opacity: 0 }, { duration: 300, pulses: 3 });
-            window.setTimeout(function() {
+            window.setTimeout(function () {
                 shake(20);
             }, 300);
         }
 
-        if (to)
-        {
+        if (to) {
             if (isSelf({ Name: to })) {
                 message = utility.getLanguageResource('Chat_UserNudgedYou', from);
             } else {
                 message = utility.getLanguageResource('Chat_UserNudgedUser', from, to);
             }
-            
+
             ui.addMessage(message, 'pm');
         } else {
             message = utility.getLanguageResource('Chat_UserNudgedRoom', from);
@@ -743,7 +855,7 @@
 
     chat.client.kick = function (room) {
         var message = utility.getLanguageResource('Chat_YouKickedFromRoom', room);
-        
+
         ui.setActiveRoom('Lobby');
         ui.removeRoom(room);
         ui.addMessage(message, 'notification');
@@ -769,7 +881,7 @@
                 } else if (b.Count > a.Count) {
                     return 1;
                 }
-                
+
                 return a.Name.toString().toUpperCase().localeCompare(b.Name.toString().toUpperCase());
             });
 
@@ -798,7 +910,7 @@
 
     chat.client.listUsers = function (users) {
         var header;
-        
+
         if (users.length === 0) {
             header = utility.getLanguageResource('Chat_RoomSearchEmpty');
             ui.addMessage(header, 'list-header');
@@ -808,10 +920,10 @@
             ui.addMessage(users.join(', '), 'list-item');
         }
     };
-    
+
     chat.client.listAllowedUsers = function (room, isPrivate, users) {
         var message;
-        
+
         if (!isPrivate) {
             message = utility.getLanguageResource('Chat_RoomNotPrivateAllowed', room);
         } else if (users.length === 0) {
@@ -819,7 +931,7 @@
         } else {
             message = utility.getLanguageResource('Chat_RoomPrivateUsersAllowedResults', room);
         }
-        
+
         ui.addMessage(message, 'list-header');
 
         if (isPrivate && users.length > 0) {
@@ -842,7 +954,7 @@
 
     chat.client.showUsersOwnedRoomList = function (user, rooms) {
         var message;
-        
+
         if (rooms.length === 0) {
             message = utility.getLanguageResource('Chat_UserOwnsNoRooms', user);
             ui.addMessage(message, 'list-header');
@@ -898,7 +1010,7 @@
         ui.setUnreadNotifications(read);
     };
 
-    chat.client.updateTabOrder = function(tabOrder) {
+    chat.client.updateTabOrder = function (tabOrder) {
         ui.updateTabOrder(tabOrder);
     };
 
@@ -941,7 +1053,7 @@
             },
             messageCompleteTimeout = null;
 
-        if (msg[0] !== '/') {
+        if (!isCommand(msg)) {
 
             // if you're in the lobby, you can't send mesages (only commands)
             if (chat.state.activeRoom === undefined) {
@@ -1070,8 +1182,6 @@
 
     $ui.bind(ui.events.activeRoomChanged, function (ev, room) {
         if (room === 'Lobby') {
-            populateLobbyRooms();
-
             // Remove the active room
             chat.state.activeRoom = undefined;
         }
@@ -1130,23 +1240,22 @@
     $(ui).bind(ui.events.loggedOut, function () {
         logout();
     });
-    
+
     $ui.bind(ui.events.tabOrderChanged, function (ev, tabOrder) {
         var orderChanged = false;
-        
+
         if (chat.tabOrder === undefined || chat.tabOrder.length !== tabOrder.length) {
             orderChanged = true;
         }
-        
-        if (orderChanged === false)
-        {
+
+        if (orderChanged === false) {
             for (var i = 0; i < tabOrder.length; i++) {
                 if (chat.tabOrder[i] !== tabOrder[i]) {
                     orderChanged = true;
                 }
             }
         }
-        
+
         if (orderChanged === false) {
             return;
         }
@@ -1165,6 +1274,7 @@
         var stateCookie = $.cookie('jabbr.state'),
             state = stateCookie ? JSON.parse(stateCookie) : {},
             initial = true,
+            initialized = false,
             welcomeMessages = utility.getLanguageResource('Chat_InitialMessages').split('\n');
 
         // Initialize the ui, passing the user preferences
@@ -1176,7 +1286,7 @@
 
         function initConnection() {
             var logging = $.cookie('jabbr.logging') === '1',
-                transport = $.cookie('jabbr.transport'),
+                transport = $.cookie('jabbr.transport') || ['webSockets', 'serverSentEvents', 'longPolling'],
                 options = {};
 
             if (transport) {
@@ -1187,24 +1297,14 @@
             connection.hub.qs = "version=" + window.jabbrVersion;
             connection.hub.start(options)
                           .done(function () {
-                              chat.server.join()
-                              .fail(function () {
-                                  // So refresh the page, our auth token is probably gone
-                                  performLogout();
-                              })
-                              .done(function () {
-                                  // get list of available commands
-                                  chat.server.getCommands()
-                                      .done(function (commands) {
-                                          ui.setCommands(commands);
-                                      });
 
-                                  // get list of available shortcuts
-                                  chat.server.getShortcuts()
-                                      .done(function (shortcuts) {
-                                          ui.setShortcuts(shortcuts);
-                                      });
-                              });
+                              chat.server.join()
+                                  .fail(function () {
+                                      // So refresh the page, our auth token is probably gone
+                                      performLogout();
+                                  });
+
+                              initialized = true;
                           });
 
             connection.hub.stateChanged(function (change) {
@@ -1223,12 +1323,17 @@
 
                     initial = false;
                 }
+                else if (change.newState === $.connection.connectionState.disconnected && initial === true) {
+                    initial = false;
+                }
             });
 
             connection.hub.disconnected(function () {
-                connection.hub.log('Dropped the connection from the server. Restarting in 5 seconds.');
+                if (initialized === true) {
+                    connection.hub.log('Dropped the connection from the server. Restarting in 5 seconds.');
 
-                failPendingMessages();
+                    failPendingMessages();
+                }
 
                 ui.showStatus(2, '');
                 ui.setReadOnly(true);
@@ -1241,10 +1346,12 @@
                                       // ui.showReloadMessageNotification();
 
                                       // Turn the firehose back on
-                                      chat.server.join(true).fail(function () {
+                                      chat.server.join(initialized).fail(function () {
                                           // So refresh the page, our auth token is probably gone
                                           performLogout();
                                       });
+
+                                      initialized = true;
                                   });
                 }, 5000);
             });
